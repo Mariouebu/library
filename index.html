@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>図書館管理システム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+
+    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
+        <h1 class="text-2xl font-bold mb-4 text-center">図書館管理システム</h1>
+
+        <div class="flex border-b mb-6 text-sm">
+            <button onclick="switchTab('borrow')" class="flex-1 py-2 font-bold border-b-2 border-blue-500" id="tab-borrow">貸出・返却</button>
+            <button onclick="switchTab('admin')" class="flex-1 py-2 font-bold text-gray-400" id="tab-admin">管理・登録</button>
+        </div>
+
+        <div id="view-borrow">
+            <div id="reader" class="w-full mb-4 bg-black rounded-lg overflow-hidden"></div>
+            
+            <!-- 利用者選択ドロップダウン -->
+            <select id="user-select" class="w-full p-2 border rounded mb-2">
+                <option value="">利用者を選択してください</option>
+            </select>
+
+            <div class="flex gap-2 mb-6">
+                <button onclick="handleAction('borrow')" class="flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600">貸出</button>
+                <button onclick="handleAction('return')" class="flex-1 bg-green-500 text-white py-2 rounded-lg font-semibold hover:bg-green-600">返却</button>
+            </div>
+            <div id="status" class="text-center text-gray-700 font-bold mb-4 p-2 border rounded bg-yellow-50">バーコードをカメラに向けてください</div>
+        </div>
+
+        <div id="view-admin" class="hidden">
+            <h2 class="font-bold mb-2">本を登録</h2>
+            <input type="text" id="new-isbn" placeholder="バーコードID" class="w-full p-2 border rounded mb-2">
+            <input type="text" id="new-title" placeholder="本のタイトル" class="w-full p-2 border rounded mb-4">
+            <button onclick="registerBook()" class="w-full bg-purple-500 text-white py-2 rounded-lg font-semibold hover:bg-purple-600 mb-6">本を登録</button>
+            
+            <h2 class="font-bold mb-2">利用者を登録</h2>
+            <input type="text" id="new-user" placeholder="名前" class="w-full p-2 border rounded mb-2">
+            <button onclick="registerUser()" class="w-full bg-orange-500 text-white py-2 rounded-lg font-semibold hover:bg-orange-600">利用者を登録</button>
+        </div>
+
+        <h2 class="text-lg font-bold mt-4 mb-2">本棚状況</h2>
+        <div id="book-list" class="space-y-2 border-t pt-2 text-sm"></div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 880;
+            gain.gain.value = 0.1;
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        let books = [{ id: '9784000000001', title: 'プログラミング入門', status: '在庫あり', borrower: '' }];
+        let users = ['田中 太郎', '佐藤 花子'];
+        let scannedCode = "";
+        let html5QrCode = null;
+
+        function switchTab(tab) {
+            document.getElementById('view-borrow').style.display = tab === 'borrow' ? 'block' : 'none';
+            document.getElementById('view-admin').style.display = tab === 'admin' ? 'block' : 'none';
+            document.getElementById('tab-borrow').className = tab === 'borrow' ? 'flex-1 py-2 font-bold border-b-2 border-blue-500' : 'flex-1 py-2 font-bold text-gray-400';
+            document.getElementById('tab-admin').className = tab === 'admin' ? 'flex-1 py-2 font-bold border-b-2 border-blue-500' : 'flex-1 py-2 font-bold text-gray-400';
+            if (tab === 'borrow' && !html5QrCode) startScanner();
+        }
+
+        function startScanner() {
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 250, height: 150 } }, (decodedText) => {
+                if (scannedCode === decodedText) return;
+                scannedCode = decodedText;
+                document.getElementById('status').innerText = `読み取り完了: ${decodedText}`;
+                playBeep();
+            });
+        }
+
+        function registerBook() {
+            const id = document.getElementById('new-isbn').value;
+            const title = document.getElementById('new-title').value;
+            if (id && title) {
+                books.push({ id, title, status: '在庫あり', borrower: '' });
+                renderBooks();
+            }
+        }
+
+        function registerUser() {
+            const name = document.getElementById('new-user').value;
+            if (name) {
+                users.push(name);
+                updateUserSelect();
+                alert(`${name}さんを登録しました`);
+            }
+        }
+
+        function updateUserSelect() {
+            const select = document.getElementById('user-select');
+            select.innerHTML = '<option value="">利用者を選択</option>' + users.map(u => `<option value="${u}">${u}</option>`).join('');
+        }
+
+        function handleAction(type) {
+            if (!scannedCode) { alert("バーコードを読み込んでください"); return; }
+            const book = books.find(b => b.id === scannedCode);
+            if (!book) { alert("本が見つかりません"); return; }
+            
+            if (type === 'borrow') {
+                const user = document.getElementById('user-select').value;
+                if (!user) { alert("借りる人を選択してください"); return; }
+                book.status = '貸出中';
+                book.borrower = user;
+            } else {
+                book.status = '在庫あり';
+                book.borrower = '';
+            }
+            renderBooks();
+            scannedCode = "";
+            document.getElementById('status').innerText = "バーコードをカメラに向けてください";
+        }
+
+        function renderBooks() {
+            document.getElementById('book-list').innerHTML = books.map(b => `
+                <div class="flex justify-between p-2 border-b">
+                    <div>
+                        <div class="font-bold">${b.title}</div>
+                        <div class="text-xs text-gray-500">${b.borrower ? '貸出先: ' + b.borrower : '在庫'}</div>
+                    </div>
+                    <span class="${b.status === '在庫あり' ? 'text-green-600' : 'text-red-600'}">${b.status}</span>
+                </div>
+            `).join('');
+        }
+
+        updateUserSelect();
+        startScanner();
+        renderBooks();
+    </script>
+</body>
+</html>
